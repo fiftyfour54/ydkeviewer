@@ -1,2 +1,7 @@
 pics*
 field/*
+*.env
+decker.jpg
+temp.png
+token.env
+*.cdb
