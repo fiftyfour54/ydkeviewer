@@ -63,7 +63,7 @@ def get_image(c_id):
 
 
 def get_image_art(c_id):
-    if not os.path.exists("pics/{0}.jpg".format(c_id)):
+    if not os.path.exists("field/{0}.jpg".format(c_id)):
         try:
             request.urlretrieve(
                 'https://storage.googleapis.com/ygoprodeck.com/pics_artgame/{0}.jpg'.format(c_id),
@@ -213,7 +213,7 @@ class Banlist():
         return 3
 
 
-async def gen_list(input_string, ban=-1):
+async def gen_list(input_string, ban=-1, bg_id=-1):
     with open("cardinfo.json") as read_file:
         json_db = json.load(read_file)
     try:
@@ -262,27 +262,25 @@ async def gen_list(input_string, ban=-1):
                         f_sp[img] = 0
                     f_sp[img] = f_sp[img] + 1
     # Draw Background
-    if len(f_sp) != 0:
+    key = -1
+    if bg_id != -1: # custom bg
+        c_data = get_card(json_db, bg_id)
+        if c_data is None:
+            c_data = get_card_edopro(bg_id)
+            if c_data is None:
+                print("NO CARD FOUND WITH " + str(bg_id))
+                raise Exception("NO CARD FOUND WITH " + str(bg_id))
+
+        key = bg_id
+    elif len(f_sp) != 0:  # Field art background
         key = max(f_sp, key=f_sp.get)
+    if key != -1:
         img_path = get_image_art(key)
         if img_path is not None:
             img = Image.open(img_path)
             img = img.resize((1000, 1000), resample=Image.Resampling.LANCZOS)
             img = img.filter(ImageFilter.GaussianBlur(5))
             bg.paste(img, (0, 0))
-    # if os.path.exists("field/" + str(key) + ".png"):
-    #    img = Image.open("field/" + str(key) + ".png")
-    #   img = img.resize((1000, 1000), resample=Image.Resampling.LANCZOS)
-    #  img = img.filter(ImageFilter.GaussianBlur(5))
-    # bg.paste(img, (0, 0))
-    # else:
-    # fimg = get_image_art(key)
-    # fmg = Image.open(fimg)
-    # cropper = fmg.crop((49, 111, 49 + 323, 111 + 323))
-    # cropper.save("field/" + str(key) + ".png")
-    # img = cropper.resize((1000, 1000), resample=Image.Resampling.LANCZOS)
-    # img = img.filter(ImageFilter.GaussianBlur(5))
-    # bg.paste(img, (0, 0))
     img_boxes = Image.open("boxes.png")
     bg.paste(img_boxes, (0, 0), mask=img_boxes)
     blist = Banlist(ban)
@@ -479,6 +477,7 @@ class MyModal(discord.ui.Modal):
         super().__init__(*args, **kwargs)
         self.add_item(discord.ui.InputText(label="ydke url:", style=discord.InputTextStyle.long))
         self.add_item(discord.ui.InputText(label="Ban", value="Banlist - 0: TCG, 1: OCG, 2: GOAT, 3: EDISON"))
+        self.add_item(discord.ui.InputText(label="Background Card ID (blank for auto)", value="",required=False))
 
     async def callback(self, interaction: discord.Interaction):
         ban = self.children[1].value
@@ -496,18 +495,27 @@ class MyModal(discord.ui.Modal):
                     ban = -1
             else:
                 ban = int(ban)
+        bg = self.children[2].value
+        if isinstance(bg, str):
+            if bg.strip().isnumeric():
+                bg = str(bg)
+            else:
+                bg = -1
+
         try:
-            a = await gen_list(self.children[0].value, ban)
+            a = await gen_list(self.children[0].value, ban, bg)
         except Exception as ex:
+            print(ex)
             await interaction.response.send_message(content=ex, ephemeral=True)
             return
         rname = random_string(14)
         bytes = BytesIO()
         a.save(bytes, format="PNG")
         await save_image("cache/{0}.png".format(rname), bytes.getbuffer())
-        await interaction.response.send_message(content=self.children[0].value,
+        await asyncio.sleep(0.2)
+        await interaction.response.send_message(content="```"+self.children[0].value+"```",
                                                 file=discord.File("cache/{0}.png".format(rname)))
-        os.unlink("cache/{0}.png".format(rname))
+        os.remove("cache/{0}.png".format(rname))
 
 
 intents = discord.Intents.default()
@@ -536,6 +544,7 @@ async def on_message(message):
         try:
             a = await gen_list(message.content)
         except Exception as ex:
+            print(ex)
             await message.reply(content=ex)
             await message.remove_reaction(emoji="🕔", member=client.user)
             return
